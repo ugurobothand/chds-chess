@@ -138,6 +138,56 @@ contract ChineseChessTest is Test {
         chess.submitMove(gameId, 56, 65); // row7 = backward for Red
     }
 
+    function test_SessionKeyCanSubmitMoveForAuthorizedGame() public {
+        address sessionKey = makeAddr("sessionKey");
+
+        vm.prank(player1);
+        chess.authorizeSessionKey(sessionKey, gameId, uint64(block.timestamp + 30 minutes));
+
+        vm.prank(sessionKey);
+        chess.submitMove(gameId, 54, 45);
+
+        assertEq(chess.getBoard(gameId)[45], 7);
+        assertEq(chess.getBoard(gameId)[54], 0);
+    }
+
+    function test_SessionKeyCannotResign() public {
+        address sessionKey = makeAddr("sessionKey");
+
+        vm.prank(player1);
+        chess.authorizeSessionKey(sessionKey, gameId, uint64(block.timestamp + 30 minutes));
+
+        vm.prank(sessionKey);
+        vm.expectRevert(ChineseChess.NotAPlayer.selector);
+        chess.resign(gameId);
+    }
+
+    function test_ExpiredSessionKeyCannotMove() public {
+        address sessionKey = makeAddr("sessionKey");
+
+        vm.prank(player1);
+        chess.authorizeSessionKey(sessionKey, gameId, uint64(block.timestamp + 1 minutes));
+
+        vm.warp(block.timestamp + 2 minutes);
+        vm.prank(sessionKey);
+        vm.expectRevert(ChineseChess.SessionKeyExpired.selector);
+        chess.submitMove(gameId, 54, 45);
+    }
+
+    function test_RevokedSessionKeyCannotMove() public {
+        address sessionKey = makeAddr("sessionKey");
+
+        vm.prank(player1);
+        chess.authorizeSessionKey(sessionKey, gameId, uint64(block.timestamp + 30 minutes));
+
+        vm.prank(player1);
+        chess.revokeSessionKey(sessionKey);
+
+        vm.prank(sessionKey);
+        vm.expectRevert(ChineseChess.NotAPlayer.selector);
+        chess.submitMove(gameId, 54, 45);
+    }
+
     function test_AdvisorMoveValid() public {
         // Red Advisor at 84 (row9,col3). Move diagonally to row8,col4=pos76
         vm.prank(player1);

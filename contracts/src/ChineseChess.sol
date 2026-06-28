@@ -34,6 +34,13 @@ contract ChineseChess is ReentrancyGuard, Ownable {
         uint256 moveCount;
     }
 
+    struct SessionKey {
+        address player;
+        uint256 gameId;
+        uint64 expiresAt;
+        bool revoked;
+    }
+
     // ─── Piece Codes ─────────────────────────────────────────────────────────
     //
     // 0  = empty
@@ -46,6 +53,7 @@ contract ChineseChess is ReentrancyGuard, Ownable {
     mapping(uint256 => Game) public games;
     mapping(address => uint256) public wins;
     mapping(address => uint256) public losses;
+    mapping(address => SessionKey) public sessionKeys;
 
     uint256 public constant TIMEOUT = 10 minutes;
 
@@ -68,6 +76,8 @@ contract ChineseChess is ReentrancyGuard, Ownable {
     event MoveMade(uint256 indexed gameId, address player, uint8 fromPos, uint8 toPos);
     event GameFinished(uint256 indexed gameId, Winner winner, address winnerAddress);
     event GameDraw(uint256 indexed gameId);
+    event SessionKeyAuthorized(address indexed player, address indexed sessionKey, uint256 indexed gameId, uint64 expiresAt);
+    event SessionKeyRevoked(address indexed player, address indexed sessionKey, uint256 indexed gameId);
 
     // ─── Errors ──────────────────────────────────────────────────────────────
 
@@ -76,6 +86,8 @@ contract ChineseChess is ReentrancyGuard, Ownable {
     error GameNotActive();
     error TimeoutNotReached();
     error NotAPlayer();
+    error InvalidSessionKey();
+    error SessionKeyExpired();
     error WithdrawFailed();
 
     // ─── External ────────────────────────────────────────────────────────────
@@ -103,10 +115,11 @@ contract ChineseChess is ReentrancyGuard, Ownable {
 
     function submitMove(uint256 gameId, uint8 fromPos, uint8 toPos) external nonReentrant {
         Game storage g = games[gameId];
+        address player = _resolveMovePlayer(g, gameId);
 
         if (g.status != GameStatus.Active) revert GameNotActive();
-        if (g.isPlayer1Turn && msg.sender != g.player1) revert NotYourTurn();
-        if (!g.isPlayer1Turn && msg.sender != g.player2) revert NotYourTurn();
+        if (g.isPlayer1Turn && player != g.player1) revert NotYourTurn();
+        if (!g.isPlayer1Turn && player != g.player2) revert NotYourTurn();
 
         if (!_validateMove(g, fromPos, toPos)) revert InvalidMove();
 
@@ -117,7 +130,7 @@ contract ChineseChess is ReentrancyGuard, Ownable {
         g.lastMoveTime = block.timestamp;
         g.moveCount++;
 
-        emit MoveMade(gameId, msg.sender, fromPos, toPos);
+        emit MoveMade(gameId, player, fromPos, toPos);
 
         if (capturedPiece == 1 || capturedPiece == 11) {
             _finishGame(gameId, g.isPlayer1Turn ? Winner.Player2 : Winner.Player1);
@@ -146,6 +159,31 @@ contract ChineseChess is ReentrancyGuard, Ownable {
         _finishGame(gameId, winner);
     }
 
+    function authorizeSessionKey(address sessionKey, uint256 gameId, uint64 expiresAt) external {
+        Game storage g = games[gameId];
+
+        if (g.status != GameStatus.Active) revert GameNotActive();
+        if (msg.sender != g.player1 && msg.sender != g.player2) revert NotAPlayer();
+        if (sessionKey == address(0) || sessionKey == g.player1 || sessionKey == g.player2) revert InvalidSessionKey();
+        if (expiresAt <= block.timestamp) revert SessionKeyExpired();
+
+        sessionKeys[sessionKey] =
+            SessionKey({player: msg.sender, gameId: gameId, expiresAt: expiresAt, revoked: false});
+
+        emit SessionKeyAuthorized(msg.sender, sessionKey, gameId, expiresAt);
+    }
+
+    function revokeSessionKey(address sessionKey) external {
+        SessionKey storage key = sessionKeys[sessionKey];
+
+        if (key.player == address(0)) revert InvalidSessionKey();
+        if (msg.sender != key.player) revert NotAPlayer();
+
+        key.revoked = true;
+
+        emit SessionKeyRevoked(msg.sender, sessionKey, key.gameId);
+    }
+
     function getBoard(uint256 gameId) external view returns (uint8[90] memory) {
         return games[gameId].board;
     }
@@ -168,6 +206,16 @@ contract ChineseChess is ReentrancyGuard, Ownable {
     }
 
     // ─── Internal ────────────────────────────────────────────────────────────
+
+    function _resolveMovePlayer(Game storage g, uint256 gameId) internal view returns (address) {
+        if (msg.sender == g.player1 || msg.sender == g.player2) return msg.sender;
+
+        SessionKey storage key = sessionKeys[msg.sender];
+        if (key.player == address(0) || key.revoked || key.gameId != gameId) revert NotAPlayer();
+        if (block.timestamp > key.expiresAt) revert SessionKeyExpired();
+
+        return key.player;
+    }
 
     function _setupBoard(uint256 gameId) internal {
         uint8[90] memory board;

@@ -33,21 +33,29 @@ interface ChessBoardProps {
   isRedPlayer:  boolean
   gameActive:   boolean
   onMoveSuccess: () => void
+  isSessionKeyEnabled?: boolean
+  submitMoveWithSessionKey?: (fromPos: number, toPos: number) => Promise<`0x${string}`>
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ChessBoard({
   gameId, board, isMyTurn, isRedPlayer, gameActive, onMoveSuccess,
+  isSessionKeyEnabled = false, submitMoveWithSessionKey,
 }: ChessBoardProps) {
   const [selected, setSelected] = useState<number | null>(null)
+  const [sessionHash, setSessionHash] = useState<`0x${string}` | undefined>()
+  const [isSessionSubmitting, setIsSessionSubmitting] = useState(false)
 
   const { writeContract, data: hash, isPending, error: writeError } = useWriteContract()
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash })
+  const activeHash = sessionHash ?? hash
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: activeHash })
 
   useEffect(() => {
     if (isSuccess) {
       setSelected(null)
+      setSessionHash(undefined)
+      setIsSessionSubmitting(false)
       toast.success('Move confirmed!')
       onMoveSuccess()
     }
@@ -65,8 +73,8 @@ export default function ChessBoard({
     setSelected(null)
   }, [writeError])
 
-  function handleCell(pos: number) {
-    if (!gameActive || !isMyTurn || isPending || isConfirming) return
+  async function handleCell(pos: number) {
+    if (!gameActive || !isMyTurn || isPending || isConfirming || isSessionSubmitting) return
     const piece = board[pos]
     const mine = isRedPlayer
       ? (piece >= 1 && piece <= 7)
@@ -79,16 +87,27 @@ export default function ChessBoard({
     if (pos === selected)   { setSelected(null); return }
     if (mine)               { setSelected(pos);  return }
 
-    writeContract({
-      address: CONTRACT_ADDRESSES.ChineseChess,
-      abi: CHINESE_CHESS_ABI,
-      functionName: 'submitMove',
-      args: [gameId, selected, pos],
-    })
+    if (isSessionKeyEnabled && submitMoveWithSessionKey) {
+      setIsSessionSubmitting(true)
+      try {
+        const nextHash = await submitMoveWithSessionKey(selected, pos)
+        setSessionHash(nextHash)
+      } catch (err: any) {
+        toast.error(err?.message || 'Session move failed')
+        setIsSessionSubmitting(false)
+      }
+    } else {
+      writeContract({
+        address: CONTRACT_ADDRESSES.ChineseChess,
+        abi: CHINESE_CHESS_ABI,
+        functionName: 'submitMove',
+        args: [gameId, selected, pos],
+      })
+    }
     setSelected(null)
   }
 
-  const busy = isPending || isConfirming
+  const busy = isPending || isConfirming || isSessionSubmitting
 
   return (
     <div className="flex flex-col items-center gap-3">
@@ -100,7 +119,7 @@ export default function ChessBoard({
                        'bg-gray-700   text-gray-300'
       }`}>
         {busy
-          ? (isPending ? 'Waiting for wallet…' : 'Confirming on chain…')
+          ? (isPending ? 'Waiting for wallet…' : isSessionSubmitting && !sessionHash ? 'Submitting session move…' : 'Confirming on chain…')
           : isMyTurn ? 'Your turn' : "Opponent's turn"}
       </div>
 
@@ -169,7 +188,7 @@ export default function ChessBoard({
           <div className="absolute inset-0 flex items-center justify-center
             bg-black/20 rounded pointer-events-none">
             <span className="bg-gray-900/90 text-white text-xs px-4 py-2 rounded-full">
-              {isPending ? 'Confirm in wallet…' : 'Waiting for Arbitrum…'}
+              {isPending ? 'Confirm in wallet…' : isSessionSubmitting && !sessionHash ? 'Submitting…' : 'Waiting for Arbitrum…'}
             </span>
           </div>
         )}

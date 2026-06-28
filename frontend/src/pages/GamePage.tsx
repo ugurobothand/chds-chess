@@ -7,6 +7,7 @@ import ChessBoard from '../components/ChessBoard'
 import PieceLegend from '../components/PieceLegend'
 import { CONTRACT_ADDRESSES, CHINESE_CHESS_ABI } from '../constants/contracts'
 import { toast } from '../components/Toast'
+import { useSessionKey } from '../hooks/useSessionKey'
 
 const STATUS_LABEL = ['Waiting', 'Active', 'Finished', 'Draw']
 const WINNER_LABEL = ['—', 'Red (Player 1)', 'Black (Player 2)']
@@ -59,6 +60,15 @@ export default function GamePage() {
   const isMyTurn = (isRedPlayer && !!isPlayer1Turn) || (isBlackPlayer && !isPlayer1Turn)
   const gameActive = status === 1
   const gameFinished = status === 2 || status === 3
+  const {
+    sessionKeyAddress,
+    expiresAt,
+    isSessionKeyEnabled,
+    isBusy: isSessionKeyBusy,
+    enableSessionKey,
+    revokeSessionKey,
+    submitMoveWithSessionKey,
+  } = useSessionKey(gameId, (isRedPlayer || isBlackPlayer) ? address as `0x${string}` : undefined)
 
   // ─── Resign ──────────────────────────────────────────────────────────────────
   const { writeContract: writeResign, data: resignHash, isPending: isResigning, error: resignError } = useWriteContract()
@@ -141,10 +151,54 @@ export default function GamePage() {
         isRedPlayer={isRedPlayer}
         gameActive={gameActive}
         onMoveSuccess={refetchAll}
+        isSessionKeyEnabled={isSessionKeyEnabled}
+        submitMoveWithSessionKey={submitMoveWithSessionKey}
       />
 
       {/* Piece legend */}
       <PieceLegend />
+
+      {gameActive && (
+        <div className="bg-gray-800 rounded-xl px-4 py-3 space-y-3 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="font-semibold">Session Key</div>
+              <div className="text-xs text-gray-400">
+                {isSessionKeyEnabled && sessionKeyAddress
+                  ? `Auto moves enabled until ${new Date((expiresAt ?? 0) * 1000).toLocaleTimeString()}`
+                  : 'Authorize a temporary key for this game only.'}
+              </div>
+              {sessionKeyAddress && (
+                <div className="font-mono text-xs text-gray-500 mt-1">
+                  {sessionKeyAddress.slice(0, 6)}…{sessionKeyAddress.slice(-4)}
+                </div>
+              )}
+            </div>
+            {isSessionKeyEnabled ? (
+              <button
+                onClick={() => revokeSessionKey().catch(() => toast.error('Revoke failed'))}
+                disabled={isSessionKeyBusy}
+                className="px-3 py-1 rounded border border-gray-600 hover:border-red-400 hover:text-red-400 disabled:opacity-40"
+              >
+                {isSessionKeyBusy ? 'Revoking…' : 'Revoke'}
+              </button>
+            ) : (
+              <button
+                onClick={() => enableSessionKey()
+                  .then(() => toast.success('Session key enabled'))
+                  .catch((err) => toast.error(err?.message || 'Session key failed'))}
+                disabled={isSessionKeyBusy}
+                className="px-3 py-1 rounded bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 text-black font-semibold"
+              >
+                {isSessionKeyBusy ? 'Authorizing…' : 'Enable Auto Moves'}
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-gray-500">
+            The temporary key can only submit moves for this game. Resign, timeout, and funds still require your wallet.
+          </p>
+        </div>
+      )}
 
       {/* Controls */}
       {gameActive && (
