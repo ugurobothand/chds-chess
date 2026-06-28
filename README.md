@@ -110,5 +110,7 @@ Red pieces play from the bottom (rows 7–9). Black pieces play from the top (ro
 | File | Contents |
 |---|---|
 | `DEPLOYMENT.md` | Step-by-step deployment guide + independent frontend deployment |
+| `USER_GUIDE.md` | Production user flow and feature guide |
+| `LOCAL_TESTING_PLAYBOOK.md` | One-developer local testing flow with two Anvil wallets |
 | `GAME_DESIGN_PLAN.md` | Product vision and feature spec |
 | `PRODUCT_ROADMAP.md` | Current build status and remaining tasks |

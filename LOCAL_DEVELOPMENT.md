@@ -2,6 +2,8 @@
 
 > Play the full game locally without spending any ETH. Uses Anvil (Foundry's local blockchain) + MetaMask + the React frontend.
 
+For a concise two-wallet local playthrough, see `LOCAL_TESTING_PLAYBOOK.md`.
+
 ---
 
 ## Why Run Locally?
