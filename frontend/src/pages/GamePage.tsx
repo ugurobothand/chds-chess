@@ -8,6 +8,7 @@ import PieceLegend from '../components/PieceLegend'
 import { CONTRACT_ADDRESSES, CHINESE_CHESS_ABI } from '../constants/contracts'
 import { toast } from '../components/Toast'
 import { useSessionKey } from '../hooks/useSessionKey'
+import { useLastGame } from '../hooks/useLastGame'
 
 const STATUS_LABEL = ['Waiting', 'Active', 'Finished', 'Draw']
 const WINNER_LABEL = ['—', 'Red (Player 1)', 'Black (Player 2)']
@@ -16,6 +17,11 @@ export default function GamePage() {
   const { gameId: gameIdStr } = useParams<{ gameId: string }>()
   const gameId = BigInt(gameIdStr ?? '0')
   const { address } = useDirectWallet()
+  const { saveGameId } = useLastGame()
+
+  useEffect(() => {
+    if (gameIdStr !== undefined) saveGameId(gameIdStr)
+  }, [gameIdStr, saveGameId])
 
   // ─── Fetch board + game state (auto-refresh every 5s) ───────────────────────
   const { data: board, refetch: refetchBoard } = useReadContract({

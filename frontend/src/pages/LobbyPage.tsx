@@ -7,6 +7,7 @@ import { toast } from '../components/Toast'
 import { useDirectWallet } from '../hooks/useDirectWallet'
 import { useDevMode } from '../hooks/useDevMode'
 import { devWriteContract } from '../hooks/sendDevTx'
+import { setLastGameId } from '../hooks/useLastGame'
 
 const DEV_ACCOUNTS = [
   '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
@@ -91,6 +92,7 @@ export default function LobbyPage() {
       const logs = parseEventLogs({ abi: CHESS_LOBBY_ABI, eventName: 'GameStarted', logs: joinReceipt.logs })
       if (logs.length > 0) {
         const gameId = (logs[0].args as { gameId: bigint }).gameId
+        setLastGameId(gameId.toString())
         toast.success('Game started!')
         navigate(`/game/${gameId.toString()}`)
       }

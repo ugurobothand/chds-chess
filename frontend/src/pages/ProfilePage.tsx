@@ -2,10 +2,12 @@ import { useReadContract } from 'wagmi'
 import { useNavigate } from 'react-router-dom'
 import { CONTRACT_ADDRESSES, CHESS_PASS_ABI, CHINESE_CHESS_ABI } from '../constants/contracts'
 import { useDirectWallet } from '../hooks/useDirectWallet'
+import { useLastGame } from '../hooks/useLastGame'
 
 export default function ProfilePage() {
   const { address, isConnected } = useDirectWallet()
   const navigate = useNavigate()
+  const { gameId } = useLastGame()
 
   const { data: hasPass } = useReadContract({
     address: CONTRACT_ADDRESSES.ChessPass,
@@ -112,13 +114,24 @@ export default function ProfilePage() {
 
       {/* Play button */}
       {hasPass && (
-        <button
-          onClick={() => navigate('/lobby')}
-          className="w-full py-3 bg-yellow-500 hover:bg-yellow-400 text-black
-            font-bold rounded-xl"
-        >
-          Find a Game →
-        </button>
+        <div className="space-y-3">
+          {gameId && (
+            <button
+              onClick={() => navigate(`/game/${gameId}`)}
+              className="w-full py-3 bg-green-600 hover:bg-green-500 text-white
+                font-bold rounded-xl"
+            >
+              Resume Game #{gameId}
+            </button>
+          )}
+          <button
+            onClick={() => navigate('/lobby')}
+            className="w-full py-3 bg-yellow-500 hover:bg-yellow-400 text-black
+              font-bold rounded-xl"
+          >
+            Find a Game →
+          </button>
+        </div>
       )}
     </div>
   )

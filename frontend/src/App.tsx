@@ -7,8 +7,11 @@ import LeaderboardPage from './pages/LeaderboardPage'
 import ConnectWallet from './components/ConnectWallet'
 import NetworkGuard from './components/NetworkGuard'
 import { Toaster } from './components/Toast'
+import { useLastGame } from './hooks/useLastGame'
 
 export default function App() {
+  const { gameId } = useLastGame()
+
   return (
     <BrowserRouter>
       <div className="min-h-screen bg-gray-900 text-white">
@@ -17,6 +20,11 @@ export default function App() {
           <div className="flex gap-6 text-sm">
             <NavLink to="/"            className={({ isActive }) => isActive ? 'text-yellow-400' : 'hover:text-yellow-400'}>Mint</NavLink>
             <NavLink to="/lobby"       className={({ isActive }) => isActive ? 'text-yellow-400' : 'hover:text-yellow-400'}>Lobby</NavLink>
+            {gameId && (
+              <NavLink to={`/game/${gameId}`} className={({ isActive }) => isActive ? 'text-yellow-400' : 'hover:text-yellow-400'}>
+                Game #{gameId}
+              </NavLink>
+            )}
             <NavLink to="/profile"     className={({ isActive }) => isActive ? 'text-yellow-400' : 'hover:text-yellow-400'}>Profile</NavLink>
             <NavLink to="/leaderboard" className={({ isActive }) => isActive ? 'text-yellow-400' : 'hover:text-yellow-400'}>Leaderboard</NavLink>
           </div>
