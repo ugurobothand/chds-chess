@@ -89,6 +89,25 @@ contract ChessLobbyTest is Test {
         assertEq(uint256(status), uint256(ChineseChess.GameStatus.Active));
     }
 
+    function test_CreatorCanListAgainAfterGameIsJoined() public {
+        vm.prank(player1);
+        lobby.listGame{value: 0.1 ether}(0.1 ether);
+
+        vm.prank(player2);
+        lobby.joinGame{value: 0.1 ether}(0);
+
+        assertFalse(lobby.hasActiveListing(player1));
+
+        vm.prank(player1);
+        lobby.listGame{value: 0.2 ether}(0.2 ether);
+
+        (uint256[] memory ids, ChessLobby.OpenGame[] memory games) = lobby.getOpenGames();
+        assertEq(ids.length, 1);
+        assertEq(ids[0], 1);
+        assertEq(games[0].player, player1);
+        assertEq(games[0].wager, 0.2 ether);
+    }
+
     function test_CannotJoinOwnGame() public {
         vm.prank(player1);
         lobby.listGame{value: 0.1 ether}(0.1 ether);

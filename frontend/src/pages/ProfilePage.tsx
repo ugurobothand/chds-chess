@@ -1,13 +1,18 @@
 import { useReadContract } from 'wagmi'
 import { useNavigate } from 'react-router-dom'
 import { CONTRACT_ADDRESSES, CHESS_PASS_ABI, CHINESE_CHESS_ABI } from '../constants/contracts'
+import { useCurrentGameId } from '../hooks/useCurrentGameId'
 import { useDirectWallet } from '../hooks/useDirectWallet'
 import { useLastGame } from '../hooks/useLastGame'
+import { usePlayerIdentity } from '../hooks/usePlayerIdentity'
 
 export default function ProfilePage() {
   const { address, isConnected } = useDirectWallet()
   const navigate = useNavigate()
-  const { gameId } = useLastGame()
+  const { normalizedPlayerAddress } = usePlayerIdentity()
+  const { gameId: lastGameId } = useLastGame(normalizedPlayerAddress)
+  const { currentGameId } = useCurrentGameId(normalizedPlayerAddress)
+  const gameId = currentGameId ?? lastGameId
 
   const { data: hasPass } = useReadContract({
     address: CONTRACT_ADDRESSES.ChessPass,

@@ -9,12 +9,17 @@ import ConnectWallet from './components/ConnectWallet'
 import LanguageSelect from './components/LanguageSelect'
 import NetworkGuard from './components/NetworkGuard'
 import { Toaster } from './components/Toast'
+import { useCurrentGameId } from './hooks/useCurrentGameId'
 import { useLastGame } from './hooks/useLastGame'
+import { usePlayerIdentity } from './hooks/usePlayerIdentity'
 import { useLanguage } from './i18n'
 
 export default function App() {
-  const { gameId } = useLastGame()
+  const { normalizedPlayerAddress } = usePlayerIdentity()
+  const { gameId: lastGameId } = useLastGame(normalizedPlayerAddress)
+  const { currentGameId } = useCurrentGameId(normalizedPlayerAddress)
   const { t } = useLanguage()
+  const gameId = currentGameId ?? lastGameId
 
   return (
     <BrowserRouter>

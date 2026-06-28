@@ -9,13 +9,15 @@ import { CONTRACT_ADDRESSES, CHINESE_CHESS_ABI } from '../constants/contracts'
 import { toast } from '../components/Toast'
 import { useSessionKey } from '../hooks/useSessionKey'
 import { useLastGame } from '../hooks/useLastGame'
+import { usePlayerIdentity } from '../hooks/usePlayerIdentity'
 import { useLanguage } from '../i18n'
 
 export default function GamePage() {
   const { gameId: gameIdStr } = useParams<{ gameId: string }>()
   const gameId = BigInt(gameIdStr ?? '0')
   const { address } = useDirectWallet()
-  const { saveGameId } = useLastGame()
+  const { normalizedPlayerAddress } = usePlayerIdentity()
+  const { saveGameId } = useLastGame(normalizedPlayerAddress)
   const { t } = useLanguage()
 
   useEffect(() => {

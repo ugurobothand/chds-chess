@@ -1,4 +1,11 @@
+import { createPublicClient, http } from 'viem'
+import { hardhat } from 'viem/chains'
 import { getLocalWalletClient } from './useLocalSigner'
+
+const publicClient = createPublicClient({
+  chain: hardhat,
+  transport: http('http://localhost:8545'),
+})
 
 export async function devWriteContract(options: {
   accountIndex: number
@@ -16,5 +23,5 @@ export async function devWriteContract(options: {
     args: options.args ?? [],
     value: options.value,
   })
-  return hash
+  return publicClient.waitForTransactionReceipt({ hash })
 }

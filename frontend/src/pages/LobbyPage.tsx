@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
-import { parseEther, formatEther, parseEventLogs } from 'viem'
+import { usePublicClient, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { parseAbiItem, parseEther, formatEther, parseEventLogs } from 'viem'
 import { CONTRACT_ADDRESSES, CHESS_LOBBY_ABI } from '../constants/contracts'
 import { toast } from '../components/Toast'
 import { useDirectWallet } from '../hooks/useDirectWallet'
 import { useDevMode } from '../hooks/useDevMode'
 import { devWriteContract } from '../hooks/sendDevTx'
 import { setLastGameId } from '../hooks/useLastGame'
+import { usePlayerIdentity } from '../hooks/usePlayerIdentity'
 
 const DEV_ACCOUNTS = [
   '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
@@ -17,13 +18,60 @@ const DEV_ACCOUNTS = [
   '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65',
 ]
 
+type OpenGame = {
+  player: string
+  wager: bigint
+  createdAt: bigint
+  active: boolean
+}
+
+type OpenGamesTuple = readonly [bigint[], OpenGame[]]
+type OpenGamesObject = {
+  ids: bigint[]
+  gamesList: OpenGame[]
+}
+
+function normalizeOpenGames(data: unknown): { ids: bigint[]; games: OpenGame[] } {
+  if (!data) return { ids: [], games: [] }
+
+  if (Array.isArray(data)) {
+    const tuple = data as unknown as OpenGamesTuple
+    const ids = tuple[0]
+    const games = tuple[1]
+    return {
+      ids: Array.isArray(ids) ? [...ids] : [],
+      games: Array.isArray(games) ? [...games] : [],
+    }
+  }
+
+  const result = data as OpenGamesObject
+  return {
+    ids: Array.isArray(result.ids) ? result.ids : [],
+    games: Array.isArray(result.gamesList) ? result.gamesList : [],
+  }
+}
+
+function formatLobbyError(error: Error) {
+  const message = error.message
+  if (message.includes('AlreadyListed')) return 'You already have an open game. Cancel it or let another player join it.'
+  if (message.includes('NoPass')) return 'This wallet needs a Chess Pass before it can use the lobby.'
+  if (message.includes('WrongWagerAmount')) return 'The wager amount sent does not match the value in the form.'
+  if (message.includes('CannotJoinOwnGame')) return 'You cannot join your own listed game.'
+  if (message.includes('ListingNotActive')) return 'This listing is no longer active. Refresh the lobby and try again.'
+  if (message.includes('NotYourListing')) return 'Only the player who created this listing can cancel it.'
+  return 'Failed: ' + message.slice(0, 120)
+}
+
 export default function LobbyPage() {
   const navigate = useNavigate()
+  const client = usePublicClient()
   const { address, isConnected } = useDirectWallet()
   const { isDevMode, accountIndex } = useDevMode()
+  const { normalizedPlayerAddress } = usePlayerIdentity()
   const [showCreate, setShowCreate] = useState(false)
   const [wagerInput, setWagerInput] = useState('0')
   const [devBusy, setDevBusy] = useState(false)
+  const [awaitingMatch, setAwaitingMatch] = useState(false)
 
   const effectiveAddress = isDevMode && accountIndex !== null
     ? DEV_ACCOUNTS[accountIndex]
@@ -36,23 +84,23 @@ export default function LobbyPage() {
     query: { refetchInterval: 5000 },
   })
 
-  type OpenGamesResult = {
-    ids: bigint[]
-    gamesList: { player: string; wager: bigint; createdAt: bigint; active: boolean }[]
-  }
-  const lobbyResult = openGamesData as OpenGamesResult | undefined
-  const gameIds = lobbyResult?.ids ?? []
-  const gamesList = lobbyResult?.gamesList ?? []
+  const { ids: gameIds, games: gamesList } = normalizeOpenGames(openGamesData)
+  const hasOwnOpenListing = gamesList.some((game) => game.player.toLowerCase() === effectiveAddress?.toLowerCase())
 
   const { writeContract: writeList, data: listHash, isPending: isListing, error: listError } = useWriteContract()
   const { isLoading: isListConfirming, isSuccess: isListSuccess } = useWaitForTransactionReceipt({ hash: listHash })
 
   useEffect(() => {
-    if (isListSuccess) { toast.success('Game listed!'); setShowCreate(false); refetchGames() }
+    if (isListSuccess) {
+      toast.success('Game listed! Waiting for another player to join.')
+      setAwaitingMatch(true)
+      setShowCreate(false)
+      refetchGames()
+    }
   }, [isListSuccess, refetchGames])
 
   useEffect(() => {
-    if (listError) toast.error('Failed: ' + (listError as Error).message.slice(0, 80))
+    if (listError) toast.error(formatLobbyError(listError as Error))
   }, [listError])
 
   async function handleDevCreate() {
@@ -68,11 +116,12 @@ export default function LobbyPage() {
         args: [wagerWei],
         value: wagerWei,
       })
-      toast.success('Game created!')
+      toast.success('Game listed! Waiting for another player to join.')
+      setAwaitingMatch(true)
       setShowCreate(false)
       refetchGames()
     } catch (e: any) {
-      toast.error(e?.message || 'Failed')
+      toast.error(e instanceof Error ? formatLobbyError(e) : 'Failed')
     } finally {
       setDevBusy(false)
     }
@@ -92,7 +141,7 @@ export default function LobbyPage() {
       const logs = parseEventLogs({ abi: CHESS_LOBBY_ABI, eventName: 'GameStarted', logs: joinReceipt.logs })
       if (logs.length > 0) {
         const gameId = (logs[0].args as { gameId: bigint }).gameId
-        setLastGameId(gameId.toString())
+        setLastGameId(gameId.toString(), normalizedPlayerAddress)
         toast.success('Game started!')
         navigate(`/game/${gameId.toString()}`)
       }
@@ -102,14 +151,14 @@ export default function LobbyPage() {
   }, [joinReceipt, navigate])
 
   useEffect(() => {
-    if (joinError) toast.error('Failed: ' + (joinError as Error).message.slice(0, 80))
+    if (joinError) toast.error(formatLobbyError(joinError as Error))
   }, [joinError])
 
   async function handleDevJoin(listingId: bigint, wager: bigint) {
     if (accountIndex === null) return
     setDevBusy(true)
     try {
-      await devWriteContract({
+      const receipt = await devWriteContract({
         accountIndex,
         address: CONTRACT_ADDRESSES.ChessLobby,
         abi: CHESS_LOBBY_ABI,
@@ -117,10 +166,18 @@ export default function LobbyPage() {
         args: [listingId],
         value: wager,
       })
-      toast.success('Joined! Reloading…')
-      setTimeout(() => window.location.reload(), 2000)
+      const logs = parseEventLogs({ abi: CHESS_LOBBY_ABI, eventName: 'GameStarted', logs: receipt.logs })
+      const gameId = logs.length > 0 ? (logs[0].args as { gameId: bigint }).gameId : null
+      if (gameId === null) {
+        toast.error('Joined, but could not find game ID')
+        refetchGames()
+        return
+      }
+      setLastGameId(gameId.toString(), normalizedPlayerAddress)
+      toast.success('Game started!')
+      navigate(`/game/${gameId.toString()}`)
     } catch (e: any) {
-      toast.error(e?.message || 'Failed')
+      toast.error(e instanceof Error ? formatLobbyError(e) : 'Failed')
     } finally {
       setDevBusy(false)
     }
@@ -137,6 +194,43 @@ export default function LobbyPage() {
     if (isCancelSuccess) { toast.success('Cancelled'); refetchGames() }
   }, [isCancelSuccess, refetchGames])
 
+  useEffect(() => {
+    if (!awaitingMatch && hasOwnOpenListing) {
+      setAwaitingMatch(true)
+    }
+    if (awaitingMatch && !hasOwnOpenListing) {
+      setAwaitingMatch(false)
+    }
+  }, [awaitingMatch, hasOwnOpenListing])
+
+  useEffect(() => {
+    if (!client || !effectiveAddress || !awaitingMatch || hasOwnOpenListing) return
+
+    const deployBlock = BigInt(import.meta.env.VITE_CONTRACT_DEPLOY_BLOCK || '0')
+    client.getLogs({
+      address: CONTRACT_ADDRESSES.ChessLobby,
+      event: parseAbiItem('event GameStarted(uint256 indexed listingId, uint256 indexed gameId, address player1, address player2)'),
+      fromBlock: deployBlock,
+    })
+      .then((logs) => {
+        const normalizedAddress = effectiveAddress.toLowerCase()
+        const startedForPlayer = [...logs].reverse().find((log) => {
+          const args = log.args as { gameId?: bigint; player1?: string }
+          return args.player1?.toLowerCase() === normalizedAddress && args.gameId !== undefined
+        })
+
+        const gameId = (startedForPlayer?.args as { gameId?: bigint } | undefined)?.gameId
+        if (gameId === undefined) return
+
+        setLastGameId(gameId.toString(), normalizedPlayerAddress)
+        toast.success(`Opponent joined. Opening game #${gameId.toString()}.`)
+        navigate(`/game/${gameId.toString()}`)
+      })
+      .catch(() => {
+        // Ignore transient polling errors; next refetch will try again.
+      })
+  }, [awaitingMatch, client, effectiveAddress, hasOwnOpenListing, navigate, normalizedPlayerAddress])
+
   async function handleDevCancel(listingId: bigint) {
     if (accountIndex === null) return
     setDevBusy(true)
@@ -149,15 +243,17 @@ export default function LobbyPage() {
         args: [listingId],
       })
       toast.success('Cancelled!')
+      setAwaitingMatch(false)
       refetchGames()
     } catch (e: any) {
-      toast.error(e?.message || 'Failed')
+      toast.error(e instanceof Error ? formatLobbyError(e) : 'Failed')
     } finally {
       setDevBusy(false)
     }
   }
 
   function handleCancel(listingId: bigint) {
+    setAwaitingMatch(false)
     writeCancel({ address: CONTRACT_ADDRESSES.ChessLobby, abi: CHESS_LOBBY_ABI, functionName: 'cancelGame', args: [listingId] })
   }
 
