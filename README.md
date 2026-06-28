@@ -11,14 +11,14 @@ chds-chess/
 │   │   ├── ChessPass.sol       ERC-721 soulbound membership NFT
 │   │   ├── ChineseChess.sol    On-chain game engine (all piece rules)
 │   │   └── ChessLobby.sol      Matchmaking + ETH escrow
-│   ├── test/           Forge test suite (31 tests)
+│   ├── test/           Forge test suite (45 tests)
 │   └── script/         Deployment script
 └── frontend/           React + TypeScript + Tailwind + wagmi
     └── src/
         ├── components/ ChessBoard, ConnectWallet, NetworkGuard, Toast, PieceLegend
         ├── constants/  Contract addresses + ABIs
         ├── pages/      Mint, Lobby, Game, Profile, Leaderboard
-        └── hooks/      (none — hooks are inline in components)
+        └── hooks/      Dev mode, direct wallet, local signer, session keys
 ```
 
 ## Requirements
@@ -26,6 +26,17 @@ chds-chess/
 - [Foundry](https://getfoundry.sh/) — smart contract toolchain
 - [Node.js 18+](https://nodejs.org/) — frontend
 - A wallet with ETH on Arbitrum One (mainnet) or Arbitrum Sepolia (testnet)
+
+## Session Keys
+
+Games support scoped session keys to reduce wallet popups during play:
+
+- Players authorize a temporary browser-generated key for one `gameId`.
+- The key can only call `submitMove` for that game.
+- It cannot resign, claim timeout, withdraw funds, mint passes, or affect other games.
+- It expires after a short period and can be revoked from the game screen.
+
+This keeps move validation and settlement on-chain while avoiding a MetaMask confirmation for every move.
 
 ## Quick Start
 

@@ -221,6 +221,34 @@ Open `http://localhost:5173` in your browser.
 - **Wallet B** (Black) responds
 - Continue until checkmate, resign, or timeout
 
+### Optional: Enable Auto Moves
+
+By default, every move is an on-chain transaction, so MetaMask asks for confirmation each turn.
+
+To reduce confirmations while keeping moves on-chain:
+
+1. Open the game page with the player wallet.
+2. Click **Enable Auto Moves**.
+3. Confirm the session-key authorization in MetaMask.
+4. Confirm the small local gas transfer to the temporary key.
+5. Move pieces normally.
+
+After this, normal moves are sent by the temporary session key and should not open MetaMask each turn.
+
+The session key is intentionally narrow:
+
+| Permission | Allowed? |
+|---|---|
+| Submit moves for this `gameId` | Yes |
+| Submit moves for another game | No |
+| Resign | No |
+| Claim timeout | No |
+| Withdraw funds | No |
+| Mint passes | No |
+| Use after expiry | No |
+
+Use **Revoke** on the game page to disable the active session key.
+
 ---
 
 ## Anvil Default Test Accounts
