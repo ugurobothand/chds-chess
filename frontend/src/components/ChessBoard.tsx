@@ -7,21 +7,23 @@ import { toast } from './Toast'
 
 // Standard English abbreviations for Chinese Chess pieces
 // K=General  A=Advisor  E=Elephant  H=Horse  R=Rook  C=Cannon  S=Soldier
-const PIECES: Record<number, { char: string; red: boolean }> = {
-  1:  { char: 'K', red: true  },
-  2:  { char: 'A', red: true  },
-  3:  { char: 'E', red: true  },
-  4:  { char: 'H', red: true  },
-  5:  { char: 'R', red: true  },
-  6:  { char: 'C', red: true  },
-  7:  { char: 'S', red: true  },
-  11: { char: 'K', red: false },
-  12: { char: 'A', red: false },
-  13: { char: 'E', red: false },
-  14: { char: 'H', red: false },
-  15: { char: 'R', red: false },
-  16: { char: 'C', red: false },
-  17: { char: 'S', red: false },
+type PieceStyle = 'letters' | 'chinese'
+
+const PIECES: Record<number, { letter: string; chinese: string; red: boolean }> = {
+  1:  { letter: 'K', chinese: '帅', red: true  },
+  2:  { letter: 'A', chinese: '仕', red: true  },
+  3:  { letter: 'E', chinese: '相', red: true  },
+  4:  { letter: 'H', chinese: '马', red: true  },
+  5:  { letter: 'R', chinese: '车', red: true  },
+  6:  { letter: 'C', chinese: '炮', red: true  },
+  7:  { letter: 'S', chinese: '兵', red: true  },
+  11: { letter: 'K', chinese: '将', red: false },
+  12: { letter: 'A', chinese: '士', red: false },
+  13: { letter: 'E', chinese: '象', red: false },
+  14: { letter: 'H', chinese: '馬', red: false },
+  15: { letter: 'R', chinese: '車', red: false },
+  16: { letter: 'C', chinese: '砲', red: false },
+  17: { letter: 'S', chinese: '卒', red: false },
 }
 
 function moveErrorMessage(message: string) {
@@ -56,6 +58,9 @@ export default function ChessBoard({
   isSessionKeyEnabled = false, submitMoveWithSessionKey,
 }: ChessBoardProps) {
   const [selected, setSelected] = useState<number | null>(null)
+  const [pieceStyle, setPieceStyle] = useState<PieceStyle>(() => {
+    return localStorage.getItem('chds:piece-style') === 'chinese' ? 'chinese' : 'letters'
+  })
   const [sessionHash, setSessionHash] = useState<`0x${string}` | undefined>()
   const [isSessionSubmitting, setIsSessionSubmitting] = useState(false)
 
@@ -78,6 +83,14 @@ export default function ChessBoard({
     toast.error(moveErrorMessage(writeError.message))
     setSelected(null)
   }, [writeError])
+
+  function togglePieceStyle() {
+    setPieceStyle((current) => {
+      const next = current === 'letters' ? 'chinese' : 'letters'
+      localStorage.setItem('chds:piece-style', next)
+      return next
+    })
+  }
 
   async function handleCell(pos: number) {
     if (!gameActive || !isMyTurn || isPending || isConfirming || isSessionSubmitting) return
@@ -127,6 +140,16 @@ export default function ChessBoard({
         {busy
           ? (isPending ? 'Waiting for wallet…' : isSessionSubmitting && !sessionHash ? 'Submitting session move…' : 'Confirming on chain…')
           : isMyTurn ? 'Your turn' : "Opponent's turn"}
+      </div>
+
+      <div className="flex rounded border border-gray-700 overflow-hidden text-xs">
+        <button
+          onClick={togglePieceStyle}
+          className="px-3 py-1 bg-gray-800 hover:bg-gray-700 text-gray-200"
+          title={pieceStyle === 'letters' ? 'Show Chinese piece names' : 'Show letter piece names'}
+        >
+          {pieceStyle === 'letters' ? '中文棋子' : 'Letter Pieces'}
+        </button>
       </div>
 
       {/* Board */}
@@ -179,7 +202,7 @@ export default function ChessBoard({
                           : 'bg-amber-50 border-gray-900 text-gray-900',
                         isSel ? 'ring-2 ring-yellow-500 ring-offset-1' : '',
                       ].join(' ')}>
-                        {info.char}
+                        {pieceStyle === 'letters' ? info.letter : info.chinese}
                       </div>
                     )}
                   </div>
