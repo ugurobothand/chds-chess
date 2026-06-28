@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { CONTRACT_ADDRESSES, CHINESE_CHESS_ABI } from '../constants/contracts'
 import { toast } from './Toast'
+import { useLanguage } from '../i18n'
 
 // ─── Piece map ────────────────────────────────────────────────────────────────
 
@@ -26,16 +27,16 @@ const PIECES: Record<number, { letter: string; chinese: string; red: boolean }> 
   17: { letter: 'S', chinese: '卒', red: false },
 }
 
-function moveErrorMessage(message: string) {
+function moveErrorMessage(message: string, errors: Record<string, string>) {
   return message.includes('InvalidMove') || message.includes('0x87822d34')
-    ? 'Invalid move - try another square'
+    ? errors.invalidMove
     : message.includes('NotYourTurn') || message.includes('0x6f5c3167')
-      ? 'Not your turn'
+      ? errors.notYourTurn
       : message.includes('GameNotActive')
-        ? 'Game is not active'
+        ? errors.gameNotActive
         : message.includes('SessionKeyExpired')
-          ? 'Session key expired'
-          : 'Move failed'
+          ? errors.sessionKeyExpired
+          : errors.moveFailed
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -57,6 +58,7 @@ export default function ChessBoard({
   gameId, board, isMyTurn, isRedPlayer, gameActive, onMoveSuccess,
   isSessionKeyEnabled = false, submitMoveWithSessionKey,
 }: ChessBoardProps) {
+  const { t } = useLanguage()
   const [selected, setSelected] = useState<number | null>(null)
   const [pieceStyle, setPieceStyle] = useState<PieceStyle>(() => {
     return localStorage.getItem('chds:piece-style') === 'chinese' ? 'chinese' : 'letters'
@@ -80,9 +82,9 @@ export default function ChessBoard({
 
   useEffect(() => {
     if (!writeError) return
-    toast.error(moveErrorMessage(writeError.message))
+    toast.error(moveErrorMessage(writeError.message, t.game.errors))
     setSelected(null)
-  }, [writeError])
+  }, [writeError, t.game.errors])
 
   function togglePieceStyle() {
     setPieceStyle((current) => {
@@ -112,7 +114,7 @@ export default function ChessBoard({
         const nextHash = await submitMoveWithSessionKey(selected, pos)
         setSessionHash(nextHash)
       } catch (err: any) {
-        toast.error(moveErrorMessage(err?.message || ''))
+        toast.error(moveErrorMessage(err?.message || '', t.game.errors))
         setIsSessionSubmitting(false)
       }
     } else {
@@ -138,17 +140,17 @@ export default function ChessBoard({
                        'bg-gray-700   text-gray-300'
       }`}>
         {busy
-          ? (isPending ? 'Waiting for wallet…' : isSessionSubmitting && !sessionHash ? 'Submitting session move…' : 'Confirming on chain…')
-          : isMyTurn ? 'Your turn' : "Opponent's turn"}
+          ? (isPending ? t.game.labels.waitingWallet : isSessionSubmitting && !sessionHash ? t.game.labels.submittingSessionMove : t.game.labels.confirmingOnChain)
+          : isMyTurn ? t.game.labels.yourTurn : t.game.labels.opponentTurn}
       </div>
 
       <div className="flex rounded border border-gray-700 overflow-hidden text-xs">
         <button
           onClick={togglePieceStyle}
           className="px-3 py-1 bg-gray-800 hover:bg-gray-700 text-gray-200"
-          title={pieceStyle === 'letters' ? 'Show Chinese piece names' : 'Show letter piece names'}
+          title={pieceStyle === 'letters' ? t.game.labels.showChinesePieces : t.game.labels.showLetterPieces}
         >
-          {pieceStyle === 'letters' ? '中文棋子' : 'Letter Pieces'}
+          {pieceStyle === 'letters' ? t.game.labels.showChinesePieces : t.game.labels.showLetterPieces}
         </button>
       </div>
 
@@ -217,14 +219,14 @@ export default function ChessBoard({
           <div className="absolute inset-0 flex items-center justify-center
             bg-black/20 rounded pointer-events-none">
             <span className="bg-gray-900/90 text-white text-xs px-4 py-2 rounded-full">
-              {isPending ? 'Confirm in wallet…' : isSessionSubmitting && !sessionHash ? 'Submitting…' : 'Waiting for Arbitrum…'}
+              {isPending ? t.game.labels.confirmInWallet : isSessionSubmitting && !sessionHash ? t.game.labels.submitting : t.game.labels.waitingChain}
             </span>
           </div>
         )}
       </div>
 
       <p className="text-xs text-gray-500">
-        {isRedPlayer ? 'You are Red (bottom ↓)' : 'You are Black (top ↑)'}
+        {isRedPlayer ? t.game.labels.youAreRed : t.game.labels.youAreBlack}
       </p>
     </div>
   )
