@@ -24,6 +24,18 @@ const PIECES: Record<number, { char: string; red: boolean }> = {
   17: { char: 'S', red: false },
 }
 
+function moveErrorMessage(message: string) {
+  return message.includes('InvalidMove') || message.includes('0x87822d34')
+    ? 'Invalid move - try another square'
+    : message.includes('NotYourTurn') || message.includes('0x6f5c3167')
+      ? 'Not your turn'
+      : message.includes('GameNotActive')
+        ? 'Game is not active'
+        : message.includes('SessionKeyExpired')
+          ? 'Session key expired'
+          : 'Move failed'
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface ChessBoardProps {
@@ -63,13 +75,7 @@ export default function ChessBoard({
 
   useEffect(() => {
     if (!writeError) return
-    const msg = writeError.message
-    toast.error(
-      msg.includes('InvalidMove')  ? 'Invalid move — try another square' :
-      msg.includes('NotYourTurn')  ? 'Not your turn' :
-      msg.includes('GameNotActive')? 'Game is not active' :
-      'Transaction failed'
-    )
+    toast.error(moveErrorMessage(writeError.message))
     setSelected(null)
   }, [writeError])
 
@@ -93,7 +99,7 @@ export default function ChessBoard({
         const nextHash = await submitMoveWithSessionKey(selected, pos)
         setSessionHash(nextHash)
       } catch (err: any) {
-        toast.error(err?.message || 'Session move failed')
+        toast.error(moveErrorMessage(err?.message || ''))
         setIsSessionSubmitting(false)
       }
     } else {
