@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Wallet Diagnostic</title>
+  <style>
+    body { font-family: sans-serif; padding: 40px; background: #111; color: #fff; line-height: 1.6; }
+    button { padding: 12px 24px; font-size: 16px; cursor: pointer; margin: 10px 0; }
+    .ok { color: #4f4; }
+    .err { color: #f44; }
+    .warn { color: #fa0; }
+    pre { background: #222; padding: 10px; border-radius: 8px; overflow-x: auto; }
+    h2 { border-bottom: 1px solid #444; padding-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <h1>Wallet Diagnostic</h1>
+  <div id="output"></div>
+
+  <script>
+    const out = document.getElementById('output');
+    function line(text, cls) {
+      const p = document.createElement('p');
+      p.textContent = text;
+      if (cls) p.className = cls;
+      out.appendChild(p);
+    }
+    function header(text) {
+      const h = document.createElement('h2');
+      h.textContent = text;
+      out.appendChild(h);
+    }
+    function code(obj) {
+      const pre = document.createElement('pre');
+      pre.textContent = JSON.stringify(obj, null, 2);
+      out.appendChild(pre);
+    }
+
+    const eth = window.ethereum;
+
+    if (!eth) {
+      line('❌ window.ethereum NOT FOUND', 'err');
+      line('No wallet extension detected. Please install MetaMask.', 'err');
+    } else {
+      line('✅ window.ethereum exists', 'ok');
+
+      header('Basic Properties');
+      line('isMetaMask: ' + !!eth.isMetaMask);
+      line('isRabby: ' + !!eth.isRabby);
+      line('isCoinbaseWallet: ' + !!eth.isCoinbaseWallet);
+      line('isTrust: ' + !!eth.isTrust);
+      line('isPhantom: ' + !!eth.isPhantom);
+      line('has providers array: ' + !!eth.providers);
+
+      if (eth.providers && eth.providers.length) {
+        header('Multiple Providers Detected (' + eth.providers.length + ')');
+        eth.providers.forEach((p, i) => {
+          line('Provider ' + i + ':', 'warn');
+          code({
+            isMetaMask: !!p.isMetaMask,
+            isRabby: !!p.isRabby,
+            isCoinbaseWallet: !!p.isCoinbaseWallet,
+            isTrust: !!p.isTrust,
+            isPhantom: !!p.isPhantom,
+            hasRequest: typeof p.request === 'function'
+          });
+        });
+      }
+
+      header('Test eth_requestAccounts');
+      const btn = document.createElement('button');
+      btn.textContent = 'Test Connect';
+      btn.onclick = async () => {
+        try {
+          const start = Date.now();
+          const accounts = await eth.request({ method: 'eth_requestAccounts' });
+          const elapsed = Date.now() - start;
+          line('✅ SUCCESS in ' + elapsed + 'ms', 'ok');
+          line('Address: ' + accounts[0], 'ok');
+        } catch (e) {
+          line('❌ ERROR: ' + e.message, 'err');
+          line('Code: ' + e.code, 'err');
+        }
+      };
+      out.appendChild(btn);
+
+      header('All ethereum keys');
+      const keys = Object.keys(eth).filter(k => typeof eth[k] !== 'function').slice(0, 20);
+      code(keys);
+    }
+  </script>
+</body>
+</html>

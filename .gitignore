@@ -1,0 +1,8 @@
+.env
+node_modules/
+out/
+cache/
+dist/
+.DS_Store
+contracts/.git.backup-before-root-repo/
+*.png

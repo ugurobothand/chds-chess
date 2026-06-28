@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>Chinese Chess - Local Test</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; }
+    h1 { font-size: 24px; }
+    button { margin: 6px 6px 6px 0; padding: 10px 16px; cursor: pointer; }
+    .section { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin: 16px 0; }
+    #status { color: #333; font-family: monospace; white-space: pre-wrap; background: #f5f5f5; padding: 10px; border-radius: 4px; min-height: 60px; }
+    input { padding: 8px; margin: 4px; width: 200px; }
+  </style>
+</head>
+<body>
+  <h1>🀄 Chinese Chess - Local Contract Test</h1>
+  <p><strong>Network:</strong> Anvil local (<code>http://127.0.0.1:8545</code>) — Chain ID <code>31337</code> — <span style="color:green">v7</span></p>
+
+  <div class="section">
+    <button id="connect">1. Connect MetaMask</button>
+    <button id="disconnect">Disconnect Site</button>
+    <button id="switchNetwork">Switch to Anvil</button>
+    <p id="account"></p>
+  </div>
+
+  <div class="section">
+    <h3>ChessPass</h3>
+    <button id="mint">2. Mint Pass (0.01 ETH)</button>
+    <button id="checkPass">Check My Pass</button>
+    <button id="testTx">Send Test TX (0 ETH)</button>
+  </div>
+
+  <div class="section">
+    <h3>Lobby</h3>
+    <input id="wager" type="text" placeholder="Wager in ETH" value="0.01">
+    <button id="listGame">3. List Game</button>
+    <br>
+    <input id="listingId" type="text" placeholder="Listing ID" value="0">
+    <button id="joinGame">4. Join Game</button>
+    <button id="cancelGame">Cancel My Listing</button>
+    <br><br>
+    <button id="getOpenGames">Refresh Open Games</button>
+    <ul id="openGames"></ul>
+  </div>
+
+  <div class="section">
+    <h3>Game</h3>
+    <input id="gameId" type="text" placeholder="Game ID" value="0">
+    <button id="getGame">Get Game Info</button>
+    <br>
+    <input id="fromPos" type="text" placeholder="From position" value="54">
+    <input id="toPos" type="text" placeholder="To position" value="45">
+    <button id="submitMove">Submit Move</button>
+  </div>
+
+  <div class="section">
+    <h3>Status Log</h3>
+    <div id="status">Not connected yet.</div>
+  </div>
+
+  <script type="module">
+    import { ethers } from "./ethers.min.js";
+
+    const Addresses = {
+      ChessPass: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      ChineseChess: "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+      ChessLobby: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
+    };
+
+    const ABIs = {
+      ChessPass: [
+        "function mint() payable",
+        "function totalMinted() view returns (uint256)",
+        "function hasPass(address) view returns (bool)",
+        "function balanceOf(address) view returns (uint256)"
+      ],
+      ChessLobby: [
+        "function listGame(uint256 wager) payable",
+        "function joinGame(uint256 listingId) payable",
+        "function cancelGame(uint256 listingId)",
+        "function getOpenGames() view returns (uint256[] memory, tuple(address player,uint256 wager,uint256 createdAt,bool active)[] memory)",
+        "function nextGameListingId() view returns (uint256)",
+        "function openGames(uint256) view returns (address player,uint256 wager,uint256 createdAt,bool active)",
+        "event GameStarted(uint256 indexed listingId, uint256 indexed gameId, address player1, address player2)"
+      ],
+      ChineseChess: [
+        "function getGame(uint256) view returns (address player1, address player2, bool isPlayer1Turn, uint8 status, uint8 winner, uint256 wager, uint256 moveCount)",
+        "function submitMove(uint256 gameId, uint8 fromPos, uint8 toPos)"
+      ]
+    };
+
+    let provider, signer, account;
+
+    function log(msg) {
+      document.getElementById("status").innerText += "\n" + msg;
+      sendLog(msg);
+    }
+
+    function sendLog(msg) {
+      try {
+        fetch("/log", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ time: new Date().toISOString(), msg: String(msg), account, url: window.location.href })
+        }).catch(() => {});
+      } catch (e) {}
+    }
+
+    document.getElementById("connect").onclick = async () => {
+      log("[DEBUG] Connect button clicked");
+      try {
+        if (!window.ethereum) {
+          log("❌ window.ethereum not found. Please install MetaMask and refresh.");
+          alert("MetaMask not detected. Install MetaMask and refresh the page.");
+          return;
+        }
+
+        // Pick MetaMask when multiple wallets are injected
+        let mmProvider = window.ethereum;
+        if (window.ethereum.providers && Array.isArray(window.ethereum.providers)) {
+          mmProvider = window.ethereum.providers.find(p => p.isMetaMask);
+          if (!mmProvider) {
+            log("❌ MetaMask provider not found among injected wallets.");
+            return;
+          }
+        }
+
+        log("MetaMask detected. Requesting accounts...");
+        provider = new ethers.BrowserProvider(mmProvider);
+        const accounts = await provider.send("eth_requestAccounts", []);
+        if (!accounts || accounts.length === 0) {
+          log("❌ No accounts returned. Make sure MetaMask is unlocked.");
+          return;
+        }
+        signer = await provider.getSigner();
+        account = await signer.getAddress();
+        document.getElementById("account").innerText = "Connected: " + account;
+        log("✅ Connected: " + account);
+
+        const net = await provider.getNetwork();
+        const chainId = Number(net.chainId);
+        log("Network chainId: " + chainId);
+        if (chainId !== 31337) {
+          log("⚠️ WARNING: Expected chainId 31337. Click 'Switch to Anvil' button.");
+        }
+
+        const bal = await provider.getBalance(account);
+        log("Balance: " + ethers.formatEther(bal) + " ETH");
+
+        // Listen for account/network changes
+        mmProvider.on("accountsChanged", (accounts) => {
+          if (accounts.length === 0) {
+            log("⚠️ MetaMask disconnected.");
+            signer = null;
+            account = null;
+            document.getElementById("account").innerText = "";
+          } else {
+            log("⚠️ Account changed. Please reconnect.");
+          }
+        });
+        mmProvider.on("chainChanged", () => {
+          log("⚠️ Network changed. Please refresh the page.");
+        });
+      } catch (err) {
+        console.error(err);
+        log("❌ Connect error: " + (err.message || err));
+      }
+    };
+
+    document.getElementById("disconnect").onclick = async () => {
+      try {
+        let mmProvider = window.ethereum;
+        if (window.ethereum.providers && Array.isArray(window.ethereum.providers)) {
+          mmProvider = window.ethereum.providers.find(p => p.isMetaMask);
+        }
+        if (!mmProvider) {
+          log("❌ MetaMask not found.");
+          return;
+        }
+        await mmProvider.request({
+          method: "wallet_revokePermissions",
+          params: [{ eth_accounts: {} }]
+        });
+        signer = null;
+        account = null;
+        document.getElementById("account").innerText = "";
+        log("✅ Site disconnected. Refresh and connect again to choose a different account.");
+      } catch (err) {
+        console.error(err);
+        log("❌ Disconnect error: " + (err.message || err));
+      }
+    };
+
+    document.getElementById("switchNetwork").onclick = async () => {
+      try {
+        let mmProvider = window.ethereum;
+        if (window.ethereum.providers && Array.isArray(window.ethereum.providers)) {
+          mmProvider = window.ethereum.providers.find(p => p.isMetaMask);
+        }
+        if (!mmProvider) {
+          log("❌ MetaMask not found.");
+          return;
+        }
+        try {
+          await mmProvider.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: "0x7A69" }] // 31337 in hex
+          });
+          log("✅ Switched to chain 42161.");
+        } catch (switchError) {
+          if (switchError.code === 4902) {
+            await mmProvider.request({
+              method: "wallet_addEthereumChain",
+              params: [{
+                chainId: "0x7A69",
+                chainName: "Anvil Local",
+                rpcUrls: ["http://127.0.0.1:8545"],
+                nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 }
+              }]
+            });
+            log("✅ Added Anvil network. Please switch to it.");
+          } else {
+            throw switchError;
+          }
+        }
+      } catch (err) {
+        console.error(err);
+        log("❌ Switch network error: " + (err.message || err));
+      }
+    };
+
+    function requireConnected() {
+      if (!signer || !account) {
+        log("❌ Please connect MetaMask first.");
+        return false;
+      }
+      return true;
+    }
+
+    document.getElementById("mint").onclick = async () => {
+      if (!requireConnected()) return;
+      try {
+        log("[DEBUG] signer address: " + await signer.getAddress());
+        log("[DEBUG] account: " + account);
+        const bal = await provider.getBalance(account);
+        log("[DEBUG] balance: " + ethers.formatEther(bal) + " ETH");
+        if (bal < ethers.parseEther("0.01")) {
+          log("❌ Insufficient balance. You need at least 0.01 ETH + gas. Current: " + ethers.formatEther(bal) + " ETH");
+          return;
+        }
+        log("Sending mint transaction...");
+        const contract = new ethers.Contract(Addresses.ChessPass, ABIs.ChessPass, signer);
+        log("[DEBUG] contract address: " + Addresses.ChessPass);
+        const tx = await contract.mint({ value: ethers.parseEther("0.01") });
+        log("Tx sent: " + tx.hash + ", waiting for confirmation...");
+        await tx.wait();
+        log("✅ Minted ChessPass. Tx: " + tx.hash);
+      } catch (err) {
+        console.error(err);
+        let reason = err.reason || err.message || err;
+        if (err.data === "0x6fea4950") reason = "Already has pass (one pass per wallet)";
+        else if (err.data === "0xcd1c8867") reason = "Insufficient payment (need 0.01 ETH)";
+        else if (err.data === "0xd05cb609") reason = "Max supply reached";
+        log("❌ Mint error: " + reason);
+      }
+    };
+
+    document.getElementById("testTx").onclick = async () => {
+      if (!requireConnected()) return;
+      try {
+        log("[DEBUG] Sending 0 ETH test transaction to self...");
+        const tx = await signer.sendTransaction({ to: account, value: 0 });
+        log("Tx sent: " + tx.hash + ", waiting...");
+        await tx.wait();
+        log("✅ Test TX confirmed: " + tx.hash);
+      } catch (err) {
+        console.error(err);
+        log("❌ Test TX error: " + (err.reason || err.message || err));
+      }
+    };
+
+    document.getElementById("checkPass").onclick = async () => {
+      if (!requireConnected()) return;
+      try {
+        const contract = new ethers.Contract(Addresses.ChessPass, ABIs.ChessPass, provider);
+        const has = await contract.hasPass(account);
+        log("Has pass: " + has);
+      } catch (err) {
+        console.error(err);
+        log("❌ Check pass error: " + (err.reason || err.message || err));
+      }
+    };
+
+    document.getElementById("listGame").onclick = async () => {
+      if (!requireConnected()) return;
+      try {
+        const wagerEth = document.getElementById("wager").value;
+        const wagerWei = ethers.parseEther(wagerEth);
+        const bal = await provider.getBalance(account);
+        if (bal < wagerWei) {
+          log("❌ Insufficient balance. Need " + wagerEth + " ETH + gas. Current: " + ethers.formatEther(bal) + " ETH");
+          return;
+        }
+        log("Sending listGame transaction...");
+        const contract = new ethers.Contract(Addresses.ChessLobby, ABIs.ChessLobby, signer);
+        const tx = await contract.listGame(wagerWei, { value: wagerWei });
+        log("Tx sent: " + tx.hash + ", waiting for confirmation...");
+        await tx.wait();
+        log("✅ Listed game. Tx: " + tx.hash);
+      } catch (err) {
+        console.error(err);
+        log("❌ List game error: " + (err.reason || err.message || err));
+      }
+    };
+
+    document.getElementById("joinGame").onclick = async () => {
+      if (!requireConnected()) return;
+      try {
+        const listingId = document.getElementById("listingId").value;
+        const lobby = new ethers.Contract(Addresses.ChessLobby, ABIs.ChessLobby, provider);
+        const open = await lobby.openGames(listingId);
+        if (!open.active) {
+          log("❌ Listing " + listingId + " is not active.");
+          return;
+        }
+        const bal = await provider.getBalance(account);
+        if (bal < open.wager) {
+          log("❌ Insufficient balance. Need " + ethers.formatEther(open.wager) + " ETH + gas.");
+          return;
+        }
+        log("Sending joinGame transaction...");
+        const iface = new ethers.Interface(ABIs.ChessLobby);
+        const data = iface.encodeFunctionData("joinGame", [BigInt(listingId)]);
+        log("[DEBUG] joinGame calldata: " + data);
+        const tx = await signer.sendTransaction({
+          to: Addresses.ChessLobby,
+          data,
+          value: open.wager
+        });
+        log("Tx sent: " + tx.hash + ", waiting for confirmation...");
+        const receipt = await tx.wait();
+        const parsedLogs = receipt.logs
+          .map((entry) => {
+            try { return iface.parseLog(entry); } catch { return null; }
+          })
+          .filter(Boolean);
+        const started = parsedLogs.find((entry) => entry.name === "GameStarted");
+        if (started) {
+          const gameId = started.args.gameId.toString();
+          document.getElementById("gameId").value = gameId;
+          log("✅ Joined listing " + listingId + ". Created gameId=" + gameId + ". Tx: " + tx.hash);
+        } else {
+          log("✅ Joined listing " + listingId + ". Tx: " + tx.hash);
+        }
+      } catch (err) {
+        console.error(err);
+        log("❌ Join game error: " + (err.reason || err.message || err));
+      }
+    };
+
+    document.getElementById("cancelGame").onclick = async () => {
+      if (!requireConnected()) return;
+      try {
+        const listingId = document.getElementById("listingId").value;
+        log("Sending cancelGame transaction...");
+        const contract = new ethers.Contract(Addresses.ChessLobby, ABIs.ChessLobby, signer);
+        const tx = await contract.cancelGame(listingId);
+        log("Tx sent: " + tx.hash + ", waiting for confirmation...");
+        await tx.wait();
+        log("✅ Cancelled listing " + listingId + ". Tx: " + tx.hash);
+      } catch (err) {
+        console.error(err);
+        log("❌ Cancel game error: " + (err.reason || err.message || err));
+      }
+    };
+
+    document.getElementById("getOpenGames").onclick = async () => {
+      try {
+        const contract = new ethers.Contract(Addresses.ChessLobby, ABIs.ChessLobby, provider);
+        const [ids, games] = await contract.getOpenGames();
+        const ul = document.getElementById("openGames");
+        ul.innerHTML = "";
+        if (ids.length === 0) {
+          ul.innerHTML = "<li>No open games</li>";
+          log("No open games.");
+          return;
+        }
+        for (let i = 0; i < ids.length; i++) {
+          const g = games[i];
+          const li = document.createElement("li");
+          li.innerText = `ID ${ids[i]}: player=${g.player}, wager=${ethers.formatEther(g.wager)} ETH`;
+          ul.appendChild(li);
+        }
+      } catch (err) {
+        console.error(err);
+        log("❌ Get open games error: " + (err.reason || err.message || err));
+      }
+    };
+
+    document.getElementById("getGame").onclick = async () => {
+      try {
+        const gameId = document.getElementById("gameId").value;
+        const contract = new ethers.Contract(Addresses.ChineseChess, ABIs.ChineseChess, provider);
+        const g = await contract.getGame(gameId);
+        const status = ["Waiting", "Active", "Finished", "Draw"];
+        const winner = ["None", "Player1", "Player2"];
+        log(`Game ${gameId}: p1=${g.player1}, p2=${g.player2}, status=${status[g.status]}, turn=${g.isPlayer1Turn ? "p1" : "p2"}, winner=${winner[g.winner]}, wager=${ethers.formatEther(g.wager)} ETH`);
+      } catch (err) {
+        console.error(err);
+        log("❌ Get game error: " + (err.reason || err.message || err));
+      }
+    };
+
+    document.getElementById("submitMove").onclick = async () => {
+      if (!requireConnected()) return;
+      try {
+        const gameId = BigInt(document.getElementById("gameId").value);
+        const fromPos = Number(document.getElementById("fromPos").value);
+        const toPos = Number(document.getElementById("toPos").value);
+        if (!Number.isInteger(fromPos) || !Number.isInteger(toPos) || fromPos < 0 || fromPos > 89 || toPos < 0 || toPos > 89) {
+          log("❌ fromPos and toPos must be integers from 0 to 89.");
+          return;
+        }
+        log(`Sending submitMove(gameId=${gameId}, from=${fromPos}, to=${toPos})...`);
+        const contract = new ethers.Contract(Addresses.ChineseChess, ABIs.ChineseChess, signer);
+        const tx = await contract.submitMove(gameId, fromPos, toPos);
+        log("Tx sent: " + tx.hash + ", waiting for confirmation...");
+        await tx.wait();
+        log("✅ Move confirmed. Tx: " + tx.hash);
+      } catch (err) {
+        console.error(err);
+        log("❌ Submit move error: " + (err.reason || err.message || err));
+      }
+    };
+  </script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+# Foundry
+out/
+cache/
+broadcast/
+
+# Dependencies are managed via git submodules (see .gitmodules)
+# Do not ignore lib/ here.
+
+# Environment
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.iml
+
+# Misc
+*.log

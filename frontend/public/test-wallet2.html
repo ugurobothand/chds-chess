@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Wallet Test 2</title>
+  <style>
+    body { font-family: sans-serif; padding: 40px; background: #111; color: #fff; }
+    button { padding: 12px 24px; font-size: 16px; cursor: pointer; margin: 10px 0; display: block; }
+    .ok { color: #4f4; }
+    .err { color: #f44; }
+    pre { background: #222; padding: 10px; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Wallet Test 2</h1>
+  <p>Click buttons in order:</p>
+  <button id="b1">1. Check if already connected</button>
+  <button id="b2">2. Request accounts (with timeout)</button>
+  <button id="b3">3. Check MetaMask selected address</button>
+  <pre id="out"></pre>
+
+  <script>
+    const out = document.getElementById('out');
+    function log(text) {
+      out.textContent += text + '\n';
+    }
+
+    document.getElementById('b1').onclick = async () => {
+      try {
+        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+        log('eth_accounts result: ' + JSON.stringify(accounts));
+      } catch (e) {
+        log('eth_accounts error: ' + e.message);
+      }
+    };
+
+    document.getElementById('b2').onclick = async () => {
+      log('Calling eth_requestAccounts...');
+      const timeout = setTimeout(() => {
+        log('⏱️ TIMEOUT: MetaMask did not respond after 10 seconds');
+        log('This means MetaMask is ignoring the request.');
+      }, 10000);
+      try {
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        clearTimeout(timeout);
+        log('✅ SUCCESS: ' + JSON.stringify(accounts));
+      } catch (e) {
+        clearTimeout(timeout);
+        log('❌ ERROR: ' + e.message + ' (code: ' + e.code + ')');
+      }
+    };
+
+    document.getElementById('b3').onclick = () => {
+      log('window.ethereum.selectedAddress: ' + window.ethereum.selectedAddress);
+    };
+  </script>
+</body>
+</html>
